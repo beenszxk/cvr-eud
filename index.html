@@ -223,7 +223,7 @@ async function load(name,id=SHEET_ID){
  if(!r.ok)throw new Error(name);return objs(await r.text())}
 async function boot(){
  if(SHEET_ID.startsWith("PASTE")){err="Setup needed: open index.html and paste your Google Sheet ID into SHEET_ID.";render();return}
- try{const[t,p,a,m]=await Promise.all([load("Teams"),load("Players"),load("Archive"),load("Matches",MATCHES_ID).catch(()=>[])]);D={teams:t,players:p,archive:a,matches:(m.length&&("team1" in m[0]))?m:[]};err=""}
+ try{const[t,p,a,m,st]=await Promise.all([load("Teams"),load("Players"),load("Archive"),load("Matches",MATCHES_ID).catch(()=>[]),load("Settings").catch(()=>[])]);(st||[]).forEach(r=>{if((r.key==="discord"||r.key==="network")&&r.value)SET[r.key]=r.value});D={teams:t,players:p,archive:a,matches:(m.length&&("team1" in m[0]))?m:[]};err=""}
  catch(e){err="Could not load data. Make sure the sheet is shared as “Anyone with the link – Viewer” and the tabs are named Teams, Players and Archive."}
  render()}
 
@@ -327,10 +327,11 @@ function viewArchive(){
  return `<div class="bar"><h2>Archive</h2>${addB("archive")}</div>`+
  (L.length?`<div class="ar">${L.map(a=>`<div class="card"><div class="yr">${esc(a.draft)}</div><div style="flex:1"><div class="nm">🏆 Winner: ${esc(a.winner||"—")}</div><div class="mu">MVP: ${esc(a.mvp||"—")}</div>${a.roster?`<div style="margin-top:8px"><div class="mu">Roster</div>${chips(a.roster)}</div>`:""}${a.notes?`<p style="margin:6px 0 0">${esc(a.notes)}</p>`:""}${admB("archive",a.draft)}</div></div>`).join("")}</div>`:`<div class="empty">The archive is empty.</div>`)}
 const RANKS=[[100,"100","Diamond"],[95,"90–99","Emerald"],[85,"80–89","Gold"],[75,"70–79","Silver"],[60,"51–69","Bronze"],[25,"0–50","Gray"]];
+const SET={discord:"https://discord.gg/U8BmmHM7Mj",network:"https://beenszxk.github.io/cvr-eud/"};
+const lnk=(l,u)=>`<a class="card ic" href="${esc(u)}" target="_blank" rel="noopener"><div class="mu">${l}</div><div class="nm">${esc(String(u).replace(/^https?:\/\//,"").replace(/\/$/,""))}</div></a>`;
 function viewInfo(){
- return `<div class="bar"><h2>Information</h2></div>
- <div class="ig"><a class="card ic" href="https://discord.gg/9ZrdZUvRy3" target="_blank" rel="noopener"><div class="mu">Discord</div><div class="nm">discord.gg/9ZrdZUvRy3</div></a>
- <a class="card ic" href="https://cvr-eud.netlify.app/" target="_blank" rel="noopener"><div class="mu">Network</div><div class="nm">cvr-eud.netlify.app</div></a></div>
+ return `<div class="bar"><h2>Information</h2>${isAdm()?`<button class="ab" data-f="links:x">Edit links</button>`:""}</div>
+ <div class="ig">${lnk("Discord",SET.discord)}${lnk("Network",SET.network)}</div>
  <div class="card" style="margin-top:12px"><h3 style="margin:0 0 4px">Player ratings (OVR)</h3><div class="mu">The colour of a rating shows the player’s rank.</div>
  <table class="st"><thead><tr><th>OVR</th><th>Rank</th></tr></thead><tbody>${RANKS.map(([v,r,n])=>`<tr><td style="width:130px;white-space:nowrap;color:${tier(v)}"><b>${r}</b></td><td style="width:auto;white-space:nowrap"><span class="rk" style="background:${tier(v)}"></span>${n}</td></tr>`).join("")}</tbody></table></div>`}
 const dd=(id,all,opts,val)=>`<div class="dd" data-dd="${id}"><button type="button" class="ddb">${esc(val||all)}</button><div class="ddl"><div class="ddo ${val?"":"on"}" data-ddv="">${esc(all)}</div>${opts.map(o=>`<div class="ddo ${o===val?"on":""}" data-ddv="${esc(o)}">${esc(o)}</div>`).join("")}</div></div>`;
@@ -412,6 +413,7 @@ const matchFields=it=>{const st=setsOf(it||{});
  `<div class="f2">${fld(["score1","Sets won, team 1 (empty = auto)","num"],it)}${fld(["score2","Sets won, team 2 (empty = auto)","num"],it)}</div>`+
  fld(["mvp","MVP","player"],it)+rbuilder(1,it)+rbuilder(2,it)+fld(["notes","Notes","text"],it)};
 function openForm(kind,key){
+ if(kind==="links"){FM={kind,key:""};$("fm").innerHTML=`<div class="mb"><button class="x" data-xf>✕</button><h3 style="margin:0 0 12px">Edit links</h3><div class="fg">${fld(["discord","Discord invite link","text"],SET)}${fld(["network","Website link (Network)","text"],SET)}</div><div class="fa"><span id="fs"></span><button class="ab g" data-xf>Cancel</button><button class="ab" id="fsave">Save</button></div></div>`;$("fm").hidden=false;return}
  FM={kind,key};const it=key?D[kind].find(x=>String(x[KEYCOL[kind]])===key):null;
  $("fm").innerHTML=`<div class="mb ${kind==="matches"?"wide":""}"><button class="x" data-xf>✕</button><h3 style="margin:0 0 12px">${key?"Edit":"Add"} ${NAMES[kind]}</h3><div class="fg">${kind==="matches"?matchFields(it):FD[kind].map(f=>fld(f,it)).join("")}</div><div class="fa"><span id="fs"></span><button class="ab g" data-xf>Cancel</button><button class="ab" id="fsave">Save</button></div></div>`;
  $("fm").hidden=false}
@@ -425,6 +427,11 @@ function applyLocal(kind,key,d,j){const kc=KEYCOL[kind],A=D[kind],i=key?A.findIn
  if(kind==="teams"&&key&&low(key)!==low(d.name)){D.players.forEach(p=>{if(low(p.team)===low(key))p.team=d.name});D.matches.forEach(m=>{if(low(m.team1)===low(key))m.team1=d.name;if(low(m.team2)===low(key))m.team2=d.name});D.archive.forEach(a=>{if(low(a.winner)===low(key))a.winner=d.name})}}
 async function post(body){try{const r=await fetch(API_URL,{method:"POST",body:JSON.stringify(Object.assign({key:KEY()},body))});return await r.json()}catch(e){try{await fetch(API_URL,{method:"POST",mode:"no-cors",body:JSON.stringify(Object.assign({key:KEY()},body))});return{ok:true,unsure:true}}catch(_){return{ok:false,error:"Could not reach the server"}}}}
 async function saveForm(){const{kind,key}=FM,d=formData(),kc=KEYCOL[kind];
+ if(kind==="links"){const fix=u=>/^https?:\/\//i.test(u)?u:(u?"https://"+u:"");const b=$("fsave");b.disabled=true;fmsg("Saving…");
+  for(const k of ["discord","network"]){const v=fix(d[k]),j=await post({action:"upsert",sheet:"Settings",keyCol:"key",keyVal:k,mode:"set",data:{key:k,value:v}});
+   if(!j.ok){b.disabled=false;fmsg("Error: "+(j.error||"not saved"),1);if(j.error==="bad password"){try{localStorage.removeItem("cvrKey")}catch(e){}}return}
+   if(v)SET[k]=v}
+  b.disabled=false;$("fm").hidden=true;render();return}
  if(kind==="matches"){if(!d.team1||!d.team2||low(d.team1)===low(d.team2))return fmsg("Choose two different teams",1)}
  else if(!d[kc])return fmsg("Please fill in: "+kc,1);
  const b=$("fsave");b.disabled=true;fmsg("Saving…");
